@@ -1,0 +1,19 @@
+# ADK requirements
+# Core ADK + Web
+google-adk
+fastapi
+uvicorn[standard]
+
+# Google + Cloud
+google-generativeai
+google-auth
+google-api-python-client
+
+# Backend integrations used by tools
+pymongo
+google-cloud-spanner
+google-cloud-storage
+
+# Optional: match some core versions to avoid conflicts
+pydantic
+pydantic-settings

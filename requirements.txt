@@ -1,0 +1,46 @@
+# Core Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+
+# Google Cloud
+google-cloud-storage==2.14.0
+google-cloud-secret-manager==2.18.0
+google-cloud-spanner==3.38.0
+google-auth==2.25.2
+google-api-python-client==2.108.0
+google-generativeai==0.3.2
+
+# Database
+pymongo==4.6.1
+
+# ML/AI
+sentence-transformers==2.2.2
+numpy>=1.26.0,<2.0.0
+
+# Utilities
+requests==2.31.0
+httpx==0.25.2
+python-multipart==0.0.6
+aiofiles>=22.0,<24.0
+
+# Document Processing
+PyPDF2==3.0.1
+python-docx==1.1.0
+openpyxl==3.1.2
+
+# Integrations (optional)
+jira==3.5.2
+atlassian-python-api==3.41.5
+slack-sdk==3.26.1
+
+# Dependency fixes - compatible with FastAPI 0.104.1
+anyio>=3.7.1,<4.0.0
+websockets>=10.0,<12.0
+packaging>=23.2,<24.0
+
+# Note: langchain removed - not used in production code
+# Note: google-adk removed for production (local dev only)
+# Note: chromadb, faiss-cpu removed (using MongoDB vector search)

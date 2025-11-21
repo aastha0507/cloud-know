@@ -1,0 +1,16 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/cloudknow-adk:$BUILD_ID'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/cloudknow-adk:latest'
+      - '-f'
+      - 'Dockerfile.adk'
+      - '.'
+
+images:
+  - 'gcr.io/$PROJECT_ID/cloudknow-adk:$BUILD_ID'
+  - 'gcr.io/$PROJECT_ID/cloudknow-adk:latest'
+
