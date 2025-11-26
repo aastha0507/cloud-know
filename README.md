@@ -247,11 +247,5 @@ This is a foundational implementation. Areas for enhancement:
 - Advanced relationship detection
 - Multi-language support
 
-## License
 
-[Add your license here]
-
-## Support
-
-For issues and questions, please [create an issue](link-to-issues) or contact the development team.
 
