@@ -93,6 +93,7 @@ class RetrievalService:
                 "chunk_id": chunk_id,
                 "document_id": document_id,
                 "similarity_score": round(score, 4),
+                "content": content,
                 "content_preview": content[:500] + "..." if len(content) > 500 else content,
                 "content_length": len(content),
                 "chunk_metadata": {

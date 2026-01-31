@@ -48,7 +48,7 @@ Provides access to:
 
 2. **MongoDB Atlas** cluster with vector search enabled
 
-3. **Python 3.11+**
+3. **Python 3.11+** (3.11 or 3.12 recommended; 3.13 supported with numpy 2.x)
 
 4. **Service Account** with appropriate permissions
 
@@ -83,8 +83,11 @@ Provides access to:
    SPANNER_INSTANCE_ID=cloudknow-instance
    SPANNER_DATABASE_ID=cloudknow-db
    GEMINI_API_KEY=your-gemini-api-key
+   OPENAI_API_KEY=your-openai-api-key
    # ... other configuration
    ```
+   
+   Use **`OPENAI_API_KEY`** for the evaluation agent (`/query/answer`, OpenAI ingestion). Pydantic loads it from `.env` automatically.
 
 5. **Set up Google Cloud credentials**:
    ```bash

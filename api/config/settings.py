@@ -24,9 +24,17 @@ class Settings(BaseSettings):
     spanner_instance_id: str = "cloudknow-instance"
     spanner_database_id: str = "cloudknow-db"
     
-    # Gemini API Configuration
+    # Gemini API Configuration (legacy / non-eval)
     gemini_api_key: str
     gemini_model_name: str = "gemini-2.0-flash"
+    
+    # OpenAI API Configuration (required for evaluation agent)
+    # Set OPENAI_API_KEY in .env or environment
+    openai_api_key: Optional[str] = None
+    openai_embedding_model: str = "text-embedding-3-small"
+    openai_chat_model: str = "gpt-4o-mini"
+    openai_embedding_dimensions: int = 1536
+    mongodb_collection_openai: str = "documents"
     
     # ADK Configuration (optional, for local dev)
     google_genai_use_vertexai: Optional[str] = None

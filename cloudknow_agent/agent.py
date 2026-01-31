@@ -160,6 +160,56 @@ def ingest_google_drive_folder(
         }
 
 
+def answer_from_knowledge_base(
+    question: str,
+    conversation_id: Optional[str] = None,
+    limit: int = 6
+) -> Dict[str, Any]:
+    """Answer a question using the SAME backend as POST /query/answer (evaluation API).
+    Use this for EVERY user question so ADK matches curl. Returns answer + sources from the knowledge base only.
+    Do NOT use query_documents to answer questions; use this tool instead.
+
+    Args:
+        question (str): The user's exact question (what, how, steps, policy, procedure, etc.).
+        conversation_id (str, optional): For follow-up context (same thread).
+        limit (int): Max chunks to use (default 6).
+
+    Returns:
+        dict: answer, sources, answered_from_context.
+    """
+    try:
+        from rag.answer.answer_service import AnswerService
+        service = AnswerService()
+        result = service.answer(
+            question=question,
+            conversation_id=conversation_id,
+            limit=limit,
+        )
+        return {
+            "answer": result.get("answer", ""),
+            "sources": result.get("sources", []),
+            "answered_from_context": result.get("answered_from_context", False),
+            "token_usage": result.get("token_usage", {}),
+        }
+    except ValueError as e:
+        return {
+            "answer": "",
+            "sources": [],
+            "answered_from_context": False,
+            "error": str(e),
+            "message": "Evaluation agent not configured. Set OPENAI_API_KEY and ensure documents are ingested via /ingestion/openai/...",
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "answer": "",
+            "sources": [],
+            "answered_from_context": False,
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+        }
+
+
 def query_folder_with_context(
     folder_id: str,
     query: str,
@@ -241,6 +291,7 @@ root_agent = Agent(
         "If a query doesn't return results, suggest alternative queries or lower similarity thresholds."
     ),
     tools=[
+        answer_from_knowledge_base,
         query_documents,
         ingest_google_drive_folder,
         query_folder_with_context

@@ -50,10 +50,59 @@ class QueryResponse(BaseModel):
     relationships: Optional[List[Dict[str, Any]]] = None
 
 
+class AnswerRequest(BaseModel):
+    """Request for evaluation agent answer (natural language Q&A with citations)."""
+    question: str = Field(..., description="Natural language question")
+    conversation_id: Optional[str] = Field(None, description="Conversation ID for follow-up context")
+    limit: int = Field(6, ge=1, le=20, description="Max chunks to use as context")
+    min_score: float = Field(0.5, ge=0.0, le=1.0, description="Minimum similarity score for retrieval")
+
+
+class TokenUsageSchema(BaseModel):
+    """Token usage for reporting."""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+
+class CachingMetricsSchema(BaseModel):
+    """Caching metrics for cost report (embedding + LLM answer cache)."""
+    enabled: bool = False
+    cache_hits: int = 0
+    cache_misses: int = 0
+    llm_cache_hits: int = 0
+
+
+class CostReportResponse(BaseModel):
+    """Full cost report: tokens (input/output), embedding calls, caching metrics."""
+    token_usage: TokenUsageSchema = Field(..., description="Total tokens used (input/output breakdown)")
+    embedding_calls: int = Field(0, description="Number of embedding API calls made")
+    caching: CachingMetricsSchema = Field(default_factory=CachingMetricsSchema, description="Caching metrics (if enabled)")
+
+
+class AnswerResponse(BaseModel):
+    """Response from evaluation agent: answer grounded in sources with citations."""
+    answer: str = Field(..., description="Generated answer (grounded in source documents)")
+    sources: List[str] = Field(default_factory=list, description="Document(s) the answer came from")
+    token_usage: TokenUsageSchema = Field(default_factory=lambda: TokenUsageSchema())
+    answered_from_context: bool = Field(..., description="True if answer was grounded in retrieved docs")
+    error: Optional[str] = None
+
+
 class IngestDriveRequest(BaseModel):
     """Request to ingest from Google Drive."""
     folder_id: str = Field(..., description="Google Drive folder ID")
     limit: Optional[int] = Field(None, ge=1, description="Maximum number of files to process")
+
+
+class IngestGitHubRequest(BaseModel):
+    """Request to ingest from a GitHub repository path (e.g. NovaTech KB)."""
+    owner: str = Field(..., description="Repository owner (e.g. Rapid-Claim)")
+    repo: str = Field(..., description="Repository name (e.g. hackathon-ps)")
+    path: str = Field("novatech-kb", description="Path inside repo (e.g. novatech-kb)")
+    ref: str = Field("dev", description="Branch or ref (e.g. dev)")
+    limit: Optional[int] = Field(None, ge=1, description="Maximum number of files to process")
+    github_token: Optional[str] = Field(None, description="Optional GitHub token for private repos")
 
 
 class IngestDriveResponse(BaseModel):
@@ -66,6 +115,20 @@ class IngestDriveResponse(BaseModel):
     failed: List[Dict[str, Any]]
     error: Optional[str] = None
     success: Optional[bool] = None
+
+
+class IngestGitHubResponse(BaseModel):
+    """Response from GitHub repository ingestion."""
+    source: str = "github"
+    owner: str = ""
+    repo: str = ""
+    path: str = ""
+    ref: str = ""
+    files_found: int = 0
+    total_processed: int = 0
+    processed: List[Dict[str, Any]] = []
+    failed: List[Dict[str, Any]] = []
+    error: Optional[str] = None
 
 
 class DocumentMetadataResponse(BaseModel):

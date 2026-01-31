@@ -161,6 +161,56 @@ def ingest_google_drive_folder(
         }
 
 
+def answer_from_knowledge_base(
+    question: str,
+    conversation_id: Optional[str] = None,
+    limit: int = 6
+) -> Dict[str, Any]:
+    """Answer a question using the SAME backend as POST /query/answer (evaluation API).
+    Use this for EVERY user question so ADK matches curl. Returns answer + sources from the knowledge base only.
+    Do NOT use query_documents to answer questions; use this tool instead.
+
+    Args:
+        question (str): The user's exact question (what, how, steps, policy, procedure, etc.).
+        conversation_id (str, optional): For follow-up context (same thread).
+        limit (int): Max chunks to use (default 6).
+
+    Returns:
+        dict: answer, sources, answered_from_context.
+    """
+    try:
+        from rag.answer.answer_service import AnswerService
+        service = AnswerService()
+        result = service.answer(
+            question=question,
+            conversation_id=conversation_id,
+            limit=limit,
+        )
+        return {
+            "answer": result.get("answer", ""),
+            "sources": result.get("sources", []),
+            "answered_from_context": result.get("answered_from_context", False),
+            "token_usage": result.get("token_usage", {}),
+        }
+    except ValueError as e:
+        return {
+            "answer": "",
+            "sources": [],
+            "answered_from_context": False,
+            "error": str(e),
+            "message": "Evaluation agent not configured. Set OPENAI_API_KEY and ensure documents are ingested via /ingestion/openai/...",
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "answer": "",
+            "sources": [],
+            "answered_from_context": False,
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+        }
+
+
 def query_folder_with_context(
     folder_id: str,
     query: str,
@@ -228,20 +278,21 @@ root_agent = Agent(
     name="cloudknow_agent",
     model="gemini-2.0-flash",
     description=(
-        "CloudKnow is an intelligent knowledge assistant that helps you find information "
-        "from your documents stored in Google Drive, Jira, and Slack. It can query documents, "
-        "ingest files from Google Drive, and provide contextual answers about your knowledge base."
+        "CloudKnow answers questions using the same evaluation API as curl POST /query/answer. "
+        "For any user question you MUST call answer_from_knowledge_base first. "
+        "You can also ingest from Google Drive or query folder context when asked."
     ),
     instruction=(
-        "You are CloudKnow, a helpful knowledge assistant. You help users:\n"
-        "- Query and search through their document knowledge base\n"
-        "- Ingest documents from Google Drive folders\n"
-        "- Find relevant information and provide contextual answers\n"
-        "- Understand compliance rules and regulations\n\n"
-        "Always be helpful, provide clear answers, and cite sources when possible. "
-        "If a query doesn't return results, suggest alternative queries or lower similarity thresholds."
+        "RULE: For EVERY user message that is a question (what, how, steps, policy, procedure, list steps, etc.), "
+        "you MUST call the tool 'answer_from_knowledge_base' with the user's exact question. "
+        "Then reply with ONLY the 'answer' from that tool. If the tool returns 'sources', add one line: 'Sources: [list]'. "
+        "Do NOT add any other text, steps, or advice. Do NOT use query_documents to answer questions.\n\n"
+        "If the tool says 'I don't have enough information in the knowledge base', say exactly that and nothing else.\n\n"
+        "Only use query_documents when the user explicitly asks to 'list' or 'search' documents (not to answer a question). "
+        "Use ingest_google_drive_folder or query_folder_with_context only when the user asks to ingest or query a folder."
     ),
     tools=[
+        answer_from_knowledge_base,
         query_documents,
         ingest_google_drive_folder,
         query_folder_with_context

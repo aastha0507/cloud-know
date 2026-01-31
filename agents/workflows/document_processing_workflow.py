@@ -47,7 +47,8 @@ class DocumentProcessingWorkflow:
         source_id: str,
         mime_type: str,
         file_name: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        skip_metadata_and_summary: bool = False,
     ) -> Dict[str, Any]:
         """Process a document through the complete pipeline.
         
@@ -58,6 +59,7 @@ class DocumentProcessingWorkflow:
             mime_type: MIME type of the file
             file_name: Optional file name
             metadata: Optional additional metadata
+            skip_metadata_and_summary: If True, only chunk+embed+store in MongoDB (no Spanner/Gemini); cheaper and more resilient.
             
         Returns:
             Dictionary with processing results
@@ -76,23 +78,27 @@ class DocumentProcessingWorkflow:
                     "extraction_result": extraction_result
                 }
             
-            # Step 2: Analyze metadata
-            analysis_metadata = self.metadata_agent.analyze(
-                content=content,
-                source=source,
-                source_id=source_id,
-                file_name=file_name,
-                mime_type=mime_type,
-                **(metadata or {})
-            )
-            
-            # Step 3: Generate summary and insights
-            summary_result = self.summary_agent.generate_summary(
-                content, max_length=200, include_key_points=True
-            )
-            insights_result = self.summary_agent.generate_insights(
-                content, context=analysis_metadata
-            )
+            if skip_metadata_and_summary:
+                analysis_metadata = {"title": file_name}
+                summary_result = {}
+                insights_result = {}
+            else:
+                # Step 2: Analyze metadata
+                analysis_metadata = self.metadata_agent.analyze(
+                    content=content,
+                    source=source,
+                    source_id=source_id,
+                    file_name=file_name,
+                    mime_type=mime_type,
+                    **(metadata or {})
+                )
+                # Step 3: Generate summary and insights
+                summary_result = self.summary_agent.generate_summary(
+                    content, max_length=200, include_key_points=True
+                )
+                insights_result = self.summary_agent.generate_insights(
+                    content, context=analysis_metadata
+                )
             
             # Step 4: Chunk the document
             chunk_metadata = {
@@ -105,55 +111,72 @@ class DocumentProcessingWorkflow:
             }
             chunks = self.chunking_agent.chunk(content, chunk_metadata)
             
-            # Step 5: Generate embeddings and store
+            # Step 5: Generate embeddings and store (batch when possible for cost)
             document_id = self._generate_document_id(source, source_id)
             stored_chunks = []
+            batch_size = 20
+            embed_batch_available = hasattr(self.embedding_service, "embed_batch")
             
-            for chunk in chunks:
-                # Generate embedding
-                embedding = self.embedding_service.embed(chunk["content"])
-                
-                # Store in MongoDB Atlas
-                chunk_id = chunk["chunk_id"]
-                self.mongodb_tool.insert_document(
-                    document_id=chunk_id,
-                    content=chunk["content"],
-                    embedding=embedding,
-                    metadata=chunk["metadata"],
-                    source=source
+            if skip_metadata_and_summary and embed_batch_available and chunks:
+                for i in range(0, len(chunks), batch_size):
+                    batch = chunks[i : i + batch_size]
+                    texts = [c["content"] for c in batch]
+                    embeddings = self.embedding_service.embed_batch(texts)
+                    for chunk, embedding in zip(batch, embeddings):
+                        chunk_id = chunk["chunk_id"]
+                        self.mongodb_tool.insert_document(
+                            document_id=chunk_id,
+                            content=chunk["content"],
+                            embedding=embedding,
+                            metadata=chunk["metadata"],
+                            source=source
+                        )
+                        stored_chunks.append(chunk_id)
+            else:
+                for chunk in chunks:
+                    embedding = self.embedding_service.embed(chunk["content"])
+                    chunk_id = chunk["chunk_id"]
+                    self.mongodb_tool.insert_document(
+                        document_id=chunk_id,
+                        content=chunk["content"],
+                        embedding=embedding,
+                        metadata=chunk["metadata"],
+                        source=source
+                    )
+                    stored_chunks.append(chunk_id)
+            
+            if not skip_metadata_and_summary:
+                # Step 6: Store metadata in Spanner
+                self.spanner_tool.store_document_metadata(
+                    document_id=document_id,
+                    source=source,
+                    source_id=source_id,
+                    title=file_name or analysis_metadata.get("title"),
+                    content_type=mime_type,
+                    file_size=len(file_content),
+                    owner=analysis_metadata.get("owner"),
+                    tags=analysis_metadata.get("keywords", [])[:10],
+                    metadata={
+                        "summary": summary_result.get("summary"),
+                        "key_points": summary_result.get("key_points", []),
+                        "insights": insights_result.get("insights"),
+                        "themes": insights_result.get("themes", []),
+                        "word_count": analysis_metadata.get("word_count"),
+                        "chunk_count": len(chunks)
+                    }
                 )
-                stored_chunks.append(chunk_id)
-            
-            # Step 6: Store metadata in Spanner
-            self.spanner_tool.store_document_metadata(
-                document_id=document_id,
-                source=source,
-                source_id=source_id,
-                title=file_name or analysis_metadata.get("title"),
-                content_type=mime_type,
-                file_size=len(file_content),
-                owner=analysis_metadata.get("owner"),
-                tags=analysis_metadata.get("keywords", [])[:10],  # Limit tags
-                metadata={
-                    "summary": summary_result.get("summary"),
-                    "key_points": summary_result.get("key_points", []),
-                    "insights": insights_result.get("insights"),
-                    "themes": insights_result.get("themes", []),
-                    "word_count": analysis_metadata.get("word_count"),
-                    "chunk_count": len(chunks)
-                }
-            )
-            
-            # Step 7: Generate citation
-            citation = self.summary_agent.generate_citation(
-                content=content,
-                source=source,
-                source_id=source_id,
-                metadata={
-                    "title": file_name,
-                    "web_view_link": metadata.get("web_view_link") if metadata else None
-                }
-            )
+                # Step 7: Generate citation
+                citation = self.summary_agent.generate_citation(
+                    content=content,
+                    source=source,
+                    source_id=source_id,
+                    metadata={
+                        "title": file_name,
+                        "web_view_link": metadata.get("web_view_link") if metadata else None
+                    }
+                )
+            else:
+                citation = None
             
             return {
                 "success": True,
@@ -162,8 +185,8 @@ class DocumentProcessingWorkflow:
                 "source_id": source_id,
                 "chunks_created": len(chunks),
                 "chunks_stored": stored_chunks,
-                "summary": summary_result,
-                "insights": insights_result,
+                "summary": summary_result if not skip_metadata_and_summary else {},
+                "insights": insights_result if not skip_metadata_and_summary else {},
                 "metadata": analysis_metadata,
                 "citation": citation,
                 "processed_at": datetime.utcnow().isoformat()
@@ -182,7 +205,8 @@ class DocumentProcessingWorkflow:
         source: str,
         source_id: str,
         title: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        minimal: bool = False,
     ) -> Dict[str, Any]:
         """Process a text document (already extracted).
         
@@ -192,11 +216,11 @@ class DocumentProcessingWorkflow:
             source_id: ID in source platform
             title: Optional document title
             metadata: Optional additional metadata
+            minimal: If True, only chunk+embed+store in MongoDB (no Spanner/Gemini); cheaper.
             
         Returns:
             Dictionary with processing results
         """
-        # Convert text to bytes for processing
         file_content = text_content.encode("utf-8")
         return self.process_document(
             file_content=file_content,
@@ -204,7 +228,8 @@ class DocumentProcessingWorkflow:
             source_id=source_id,
             mime_type="text/plain",
             file_name=title,
-            metadata=metadata
+            metadata=metadata,
+            skip_metadata_and_summary=minimal,
         )
     
     def _generate_document_id(self, source: str, source_id: str) -> str:

@@ -4,24 +4,32 @@ from pymongo import MongoClient
 from pymongo.collection import Collection
 import numpy as np
 from api.config.settings import settings
+import certifi
 
 
 class MongoDBAtlasTool:
     """MCP Tool for interacting with MongoDB Atlas Vector Database."""
     
-    def __init__(self, connection_uri: Optional[str] = None):
+    def __init__(
+        self,
+        connection_uri: Optional[str] = None,
+        collection_name: Optional[str] = None,
+        embedding_dimensions: Optional[int] = None,
+    ):
         """Initialize MongoDB Atlas tool.
         
         Args:
             connection_uri: MongoDB Atlas connection URI.
-                          If None, uses settings.mongodb_atlas_uri
+            collection_name: Collection name (default from settings; use e.g. documents for OpenAI embeddings).
+            embedding_dimensions: Vector dimensions for index (default 768 for Gemini; use 1536 for OpenAI).
         """
         self.connection_uri = connection_uri or settings.mongodb_atlas_uri
-        self.client = MongoClient(self.connection_uri)
+        # self.client = MongoClient(self.connection_uri)
+        self.client = MongoClient(self.connection_uri,tlsCAFile=certifi.where())
         self.database = self.client[settings.mongodb_database_name]
-        self.collection = self.database[settings.mongodb_collection_name]
-        
-        # Create vector search index if it doesn't exist
+        self._collection_name = collection_name or settings.mongodb_collection_name
+        self.collection = self.database[self._collection_name]
+        self._embedding_dimensions = embedding_dimensions or 768
         self._ensure_vector_index()
     
     def _ensure_vector_index(self):
@@ -32,7 +40,6 @@ class MongoDBAtlasTool:
             index_names = [idx["name"] for idx in indexes]
             
             if "vector_index" not in index_names:
-                # Create vector search index
                 self.database.command({
                     "createSearchIndexes": self.collection.name,
                     "indexes": [{
@@ -43,7 +50,7 @@ class MongoDBAtlasTool:
                                 "fields": {
                                     "embedding": {
                                         "type": "knnVector",
-                                        "dimensions": 768,  # Adjust based on your embedding model
+                                        "dimensions": self._embedding_dimensions,
                                         "similarity": "cosine"
                                     }
                                 }
